@@ -1,4 +1,13 @@
+pub mod agent;
+pub mod barge_in;
+pub mod cli;
 pub mod config;
+pub mod cues;
+pub mod fastpath;
+pub mod memory;
+pub mod narrator;
 pub mod overlay;
+pub mod session;
 pub mod setup;
 pub mod state;
+pub mod usage;

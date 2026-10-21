@@ -1,1 +1,15 @@
+pub mod audio;
+pub mod barge;
+pub mod capture;
+pub mod cli;
+pub mod earcons;
+pub mod lines;
+pub mod listen;
+pub mod phrases;
+pub mod playback;
 pub mod speak;
+pub mod speaker;
+pub mod stt;
+pub mod transcript;
+pub mod tts;
+pub mod vad;

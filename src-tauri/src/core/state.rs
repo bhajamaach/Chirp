@@ -1,4 +1,4 @@
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{mpsc, Arc, Condvar, Mutex};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
@@ -23,12 +23,14 @@ pub enum State {
 #[derive(Clone)]
 pub struct StateHub {
     inner: Arc<(Mutex<State>, Condvar)>,
+    subscribers: Arc<Mutex<Vec<mpsc::Sender<State>>>>,
 }
 
 impl StateHub {
     pub fn new() -> Self {
         Self {
             inner: Arc::new((Mutex::new(State::Idle), Condvar::new())),
+            subscribers: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -36,6 +38,15 @@ impl StateHub {
         *self.inner.0.lock().unwrap() = state;
         self.inner.1.notify_all();
         let _ = app.emit(STATE_EVENT, state);
+        // Tell subscribers such as the sound cues, dropping any that have gone.
+        self.subscribers.lock().unwrap().retain(|tx| tx.send(state).is_ok());
+    }
+
+    /// A stream of every state change from now on.
+    pub fn subscribe(&self) -> mpsc::Receiver<State> {
+        let (tx, rx) = mpsc::channel();
+        self.subscribers.lock().unwrap().push(tx);
+        rx
     }
 
     /// Blocks while the state is Idle, then returns the current state.

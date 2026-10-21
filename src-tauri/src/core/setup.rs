@@ -13,6 +13,7 @@ use tauri::{menu::MenuItem, AppHandle, Wry};
 use super::{
     config::{Config, HotkeyConfig},
     overlay::apply_state,
+    session::Session,
     state::{State, StateHub},
 };
 use crate::{
@@ -29,7 +30,7 @@ const PICK_WAIT: Duration = Duration::from_secs(30);
 const PICK_ATTEMPTS: usize = 3;
 /// Offered in the spoken prompt: a right-side modifier is rarely used in
 /// shortcuts and does not type anything.
-const SUGGESTED_KEY: u16 = 61; // Right Option
+pub const SUGGESTED_KEY: u16 = 61; // Right Option
 
 /// First-run setup and the menu actions that re-run parts of it: the spoken
 /// permissions flow, the key picker and the saved config. Everything here
@@ -47,19 +48,23 @@ pub struct Setup {
 }
 
 impl Setup {
-    pub fn new(app: AppHandle, hub: StateHub, config_dir: PathBuf, key_item: MenuItem<Wry>) -> Self {
+    pub fn new(
+        app: AppHandle,
+        hub: StateHub,
+        config_dir: PathBuf,
+        key_item: MenuItem<Wry>,
+        session: Arc<Session>,
+    ) -> Self {
         let config = Config::load(&config_dir);
 
-        // The key callback must return fast, so state changes happen here.
+        // The key callback must return fast, so each press and release is
+        // handed to a worker thread that runs the spoken turn.
         let (hold_tx, hold_rx) = mpsc::channel::<bool>();
-        {
-            let (app, hub) = (app.clone(), hub.clone());
-            thread::spawn(move || {
-                for held in hold_rx {
-                    apply_state(&app, &hub, if held { State::Listening } else { State::Idle });
-                }
-            });
-        }
+        thread::spawn(move || {
+            for held in hold_rx {
+                session.on_hold(held);
+            }
+        });
 
         let setup = Setup {
             app,
@@ -80,7 +85,7 @@ impl Setup {
         self.spawn(|s| {
             let first_run = !s.config.lock().unwrap().setup_complete;
             if first_run {
-                say("Welcome to Chirp. Let's set up a few permissions.");
+                say("Hi, I am Chirp. Let's set up a few permissions.");
             }
             if !s.ready() {
                 return;
@@ -90,7 +95,7 @@ impl Setup {
                 Some(key) => s.use_key(key.keycode),
                 None => {
                     if s.pick_key() && first_run {
-                        say("All set.");
+                        say("You are all set.");
                     }
                 }
             }
@@ -227,7 +232,7 @@ impl Setup {
         };
         for _ in 0..PICK_ATTEMPTS {
             self.set_state(State::Confirming);
-            say(&format!("Press your talk key. I suggest {}.", keycodes::label(SUGGESTED_KEY)));
+            say(&crate::voice::phrases::suggest_key_line(&keycodes::label(SUGGESTED_KEY)));
             let Some(code) = hotkey.pick(PICK_WAIT) else {
                 say("I didn't hear a key. Choose Change talk key in the menu.");
                 return false;

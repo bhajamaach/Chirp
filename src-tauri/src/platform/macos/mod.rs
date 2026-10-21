@@ -1,4 +1,9 @@
+pub mod adapter;
+pub mod ax;
+pub mod cli;
+pub mod selftest;
 pub mod hotkey;
+pub mod input;
 pub mod keycodes;
 pub mod overlay;
 pub mod permissions;
