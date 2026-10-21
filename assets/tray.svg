@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 44 44">
+  <defs>
+    <mask id="m" maskUnits="userSpaceOnUse" x="0" y="0" width="120" height="120">
+      <rect width="120" height="120" fill="white"/>
+      <rect x="38" y="46" width="10" height="26" rx="5" fill="black"/>
+      <rect x="72" y="46" width="10" height="26" rx="5" fill="black"/>
+    </mask>
+  </defs>
+  <g transform="translate(22 22.5) scale(0.44) translate(-60 -51)">
+    <g mask="url(#m)" fill="#000">
+      <rect x="58" y="14" width="4" height="14" rx="2"/>
+      <circle cx="60" cy="12" r="6"/>
+      <rect x="20" y="26" width="80" height="70" rx="30"/>
+    </g>
+  </g>
+</svg>

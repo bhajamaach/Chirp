@@ -12,7 +12,7 @@ use tauri::{
 use crate::core::state::{State, StateHub};
 
 const OVERLAY_LABEL: &str = "overlay";
-const OVERLAY_SIZE: f64 = 120.0;
+const OVERLAY_SIZE: f64 = 140.0;
 /// Offset from the cursor so the mascot does not sit under the pointer.
 const CURSOR_OFFSET: f64 = 20.0;
 
@@ -86,6 +86,21 @@ pub fn run() {
             build_overlay(app.handle())?;
             spawn_cursor_follower(app.handle().clone(), hub.clone());
 
+            // Dev aid: `CHIRP_DEBUG_STATE=listening` applies a state shortly
+            // after launch so the overlay can be checked without the tray.
+            if let Ok(name) = std::env::var("CHIRP_DEBUG_STATE") {
+                let handle = app.handle().clone();
+                let hub = hub.clone();
+                thread::spawn(move || {
+                    thread::sleep(Duration::from_secs(3));
+                    if let Some((_, state)) =
+                        DEV_STATES.iter().find(|(l, _)| l.eq_ignore_ascii_case(&name))
+                    {
+                        apply_state(&handle, &hub, *state);
+                    }
+                });
+            }
+
             // Dev-only state picker so every overlay state can be seen
             // before the voice loop exists.
             let state_items = DEV_STATES
@@ -102,7 +117,9 @@ pub fn run() {
             )?;
 
             TrayIconBuilder::new()
-                .icon(app.default_window_icon().cloned().expect("app icon missing"))
+                // Monochrome silhouette; macOS tints it for light and dark menu bars.
+                .icon(tauri::include_image!("icons/tray.png"))
+                .icon_as_template(true)
                 .tooltip("Chirp")
                 .menu(&menu)
                 .on_menu_event(move |app, event| {

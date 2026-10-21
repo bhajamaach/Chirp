@@ -12,7 +12,12 @@ type ChirpState =
 const mascot = document.getElementById("mascot");
 
 function render(state: ChirpState) {
-  mascot?.setAttribute("data-state", state);
+  if (!mascot) return;
+  mascot.setAttribute("data-state", state);
+  // Restart the entry pop on every state change.
+  mascot.classList.remove("pop");
+  void mascot.offsetWidth;
+  mascot.classList.add("pop");
 }
 
 // The overlay is driven only by the state machine in the Rust core.
