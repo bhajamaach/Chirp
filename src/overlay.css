@@ -1,0 +1,103 @@
+:root {
+  --lime: #c6f566;
+  --amber: #ffc857;
+  --coral: #ff7a6b;
+  --ink: #12141a;
+}
+
+html,
+body {
+  margin: 0;
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+  pointer-events: none;
+}
+
+#mascot {
+  --body: var(--lime);
+  width: 120px;
+  height: 120px;
+  transform-origin: 60px 60px;
+  transition: transform 160ms ease;
+}
+
+#mascot .fill {
+  fill: var(--body);
+  transition: fill 160ms ease;
+}
+
+#mascot .eyes {
+  display: none;
+  fill: var(--ink);
+  stroke: var(--ink);
+}
+
+#mascot .pills,
+#mascot .sparkle,
+#mascot .ring {
+  display: none;
+}
+
+#mascot .ring {
+  stroke: var(--lime);
+}
+
+/* Idle: sleepy lines, dimmed and small. */
+#mascot[data-state="idle"] {
+  transform: scale(0.6);
+  opacity: 0.55;
+}
+#mascot[data-state="idle"] .eyes.idle { display: block; }
+
+/* Listening: tall eyes, pulsing sound pills. */
+#mascot[data-state="listening"] .eyes.listening { display: block; }
+#mascot[data-state="listening"] .pills { display: block; }
+#mascot[data-state="listening"] .pills rect {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pill 700ms ease-in-out infinite alternate;
+}
+#mascot[data-state="listening"] .pills rect:nth-child(2n) { animation-delay: 120ms; }
+#mascot[data-state="listening"] .pills rect:nth-child(3n) { animation-delay: 240ms; }
+
+/* Thinking and acting: three dots, pulsing the middle one. */
+#mascot[data-state="thinking"] .eyes.thinking,
+#mascot[data-state="acting"] .eyes.thinking { display: block; }
+#mascot[data-state="thinking"] .eyes.thinking .mid,
+#mascot[data-state="acting"] .eyes.thinking .mid {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pulse 900ms ease-in-out infinite;
+}
+#mascot[data-state="acting"] .ring { display: block; }
+
+/* Confirming: distinct amber colour, attentive eyes. */
+#mascot[data-state="confirming"] { --body: var(--amber); }
+#mascot[data-state="confirming"] .eyes.listening { display: block; }
+
+/* Done: happy arcs and a sparkle. */
+#mascot[data-state="done"] .eyes.done { display: block; }
+#mascot[data-state="done"] .sparkle { display: block; }
+
+/* Error: coral body, flat eyes. */
+#mascot[data-state="error"] { --body: var(--coral); }
+#mascot[data-state="error"] .eyes.idle { display: block; }
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.45); }
+}
+
+@keyframes pill {
+  from { transform: scaleY(0.6); }
+  to { transform: scaleY(1.15); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #mascot *,
+  #mascot {
+    animation: none !important;
+    transition: none !important;
+  }
+}
