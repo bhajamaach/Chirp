@@ -74,8 +74,8 @@ Chirp must never talk over the user's screen reader and must hand control back w
 | Slice | Scope | Status |
 |---|---|---|
 | Setup | git init, `.gitignore`, Tauri scaffold, `DECISIONS.md`, README | Done |
-| S0 | Menu-bar icon, always-on-top click-through overlay | Built, compiles and launches. Acceptance not yet verified: needs a manual check over a full-screen app and across spaces |
-| S1 | Key picker, global press-and-hold, spoken permissions flow | Not started |
+| S0 | Menu-bar icon, always-on-top click-through overlay | Accepted by the user on 21 Oct 2026 after manual testing. Window level (1000) and tray state menu confirmed working |
+| S1 | Key picker, global press-and-hold, spoken permissions flow | Built. Compiles with no warnings and 7 unit tests pass (key rules, config). Not yet verified on a real machine: needs the permission grants, a key pick, and a hold-to-talk test |
 | S2 | Audio capture, VAD, streaming STT | Not started |
 | S3 | Streaming TTS, sound cues, "stop" interrupt | Not started |
 | S4 | macOS adapter: AX tree, find, press, type | Not started |
@@ -88,8 +88,26 @@ Chirp must never talk over the user's screen reader and must hand control back w
 - `src-tauri/src/core/state.rs`: the `State` enum (Idle, Listening, Thinking, Acting, Confirming, Done, Error) and `StateHub`, a shared state with a condvar. Setting a state emits the `chirp://state` event to the overlay.
 - `src-tauri/src/platform/macos/overlay.rs`: native NSWindow tweaks (screen-saver window level, all spaces, full-screen auxiliary, ignores mouse events).
 - `src-tauri/src/lib.rs`: builds the transparent, undecorated, always-on-top overlay window, the menu-bar tray (with a dev-only "Show state" submenu), and a thread that moves the overlay beside the cursor while Chirp is not Idle.
-- `overlay.html`, `src/overlay.ts`, `src/overlay.css`: the mascot as inline SVG. Each state is a CSS `data-state` rule, so the front end holds no logic of its own.
+- `overlay.html`, `src/overlay.ts`, `src/overlay.css`: the mascot as inline SVG. Each state is a CSS `data-state` rule with its own animation loop, and the TypeScript only sets the state and replays the entry pop. Motion is disabled under the system reduce-motion setting.
+- `assets/` and `src-tauri/icons/`: the Chirp app icon and the menu-bar template icon (mascot silhouette), generated from `assets/*.svg`.
+- `src-tauri/src/core/overlay.rs`: overlay window, cursor follower and `apply_state` (moved out of `lib.rs`).
+- `src-tauri/src/core/config.rs`: the saved config (talk key and setup-complete flag), written atomically.
+- `src-tauri/src/core/setup.rs`: first-run flow and menu actions. Walks through Microphone, Accessibility and Input Monitoring one at a time with a spoken reason, installs the key tap, then runs the key picker. One flow runs at a time.
+- `src-tauri/src/platform/macos/permissions.rs`: permission checks and requests (AVFoundation for the microphone, `AXIsProcessTrusted`, `CGPreflightListenEventAccess`).
+- `src-tauri/src/platform/macos/hotkey.rs`: the global key capture. An event tap on its own thread reports press and release of the talk key, and `pick` waits for the next key press for the picker. State changes are handed to a worker thread so the tap callback stays fast.
+- `src-tauri/src/platform/macos/keycodes.rs`: key names, modifier flag bits, the allow-list of keys that may be the talk key, and the Fn check.
+- `src-tauri/src/voice/speak.rs`: speech via macOS `say` until the real TTS arrives in S3.
+- Tray menu: shows the current talk key, "Change talk key…", "Check permissions…", the dev-only state picker, and Quit.
 - App runs as a menu-bar accessory (no Dock icon) and declares no main window.
+
+### How hold-to-talk works
+
+```text
+key event -> event tap thread -> is it the talk key? -> press/release channel
+          -> worker thread -> state machine (Listening / Idle) -> overlay
+```
+
+Holding the talk key sets the state to Listening and releasing it returns to Idle. In S2 the release will go to Thinking instead.
 
 ## 6. Decisions and changes so far
 
@@ -107,4 +125,7 @@ Full list with alternatives in `DECISIONS.md`. Summary:
 | Date | Change |
 |---|---|
 | 21 Oct 2026 | Created this file from the PRD, build brief and research. |
-| 21 Oct 2026 | Scaffolded Tauri 2 app, built S0 (tray, overlay, state machine, mascot states). Compiles and launches; full-screen behaviour not yet verified. |
+| 21 Oct 2026 | Scaffolded Tauri 2 app, built S0 (tray, overlay, state machine, mascot states). |
+| 21 Oct 2026 | Replaced Tauri default icons with Chirp's app icon and a menu-bar template icon; product name set to "Chirp". |
+| 21 Oct 2026 | Added per-state mascot animation and an entry pop; overlay window enlarged to 140 px. S0 accepted by the user. |
+| 21 Oct 2026 | Built S1: permissions flow, key picker, saved config, global hold-to-talk. Compiles clean, 7 unit tests pass; real-machine verification pending. |

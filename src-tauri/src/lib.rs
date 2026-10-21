@@ -1,20 +1,20 @@
 mod core;
 mod platform;
+mod voice;
 
 use std::{thread, time::Duration};
 
 use tauri::{
-    menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
+    menu::{IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu},
     tray::TrayIconBuilder,
-    ActivationPolicy, Manager, PhysicalPosition, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+    ActivationPolicy, Manager,
 };
 
-use crate::core::state::{State, StateHub};
-
-const OVERLAY_LABEL: &str = "overlay";
-const OVERLAY_SIZE: f64 = 140.0;
-/// Offset from the cursor so the mascot does not sit under the pointer.
-const CURSOR_OFFSET: f64 = 20.0;
+use crate::core::{
+    overlay::{self, apply_state},
+    setup::Setup,
+    state::{State, StateHub},
+};
 
 const DEV_STATES: [(&str, State); 7] = [
     ("Idle", State::Idle),
@@ -25,52 +25,6 @@ const DEV_STATES: [(&str, State); 7] = [
     ("Done", State::Done),
     ("Error", State::Error),
 ];
-
-fn build_overlay(app: &tauri::AppHandle) -> tauri::Result<WebviewWindow> {
-    let window = WebviewWindowBuilder::new(app, OVERLAY_LABEL, WebviewUrl::App("overlay.html".into()))
-        .title("Chirp overlay")
-        .inner_size(OVERLAY_SIZE, OVERLAY_SIZE)
-        .transparent(true)
-        .decorations(false)
-        .shadow(false)
-        .resizable(false)
-        .always_on_top(true)
-        .visible_on_all_workspaces(true)
-        .skip_taskbar(true)
-        .focused(false)
-        .visible(false)
-        .build()?;
-    window.set_ignore_cursor_events(true)?;
-    #[cfg(target_os = "macos")]
-    platform::macos::overlay::configure(&window)?;
-    Ok(window)
-}
-
-/// Keeps the overlay next to the cursor while Chirp is active. Sleeps on a
-/// condvar while Idle so idle CPU use stays near zero.
-fn spawn_cursor_follower(app: tauri::AppHandle, hub: StateHub) {
-    thread::spawn(move || loop {
-        hub.wait_until_active();
-        if let Some(window) = app.get_webview_window(OVERLAY_LABEL) {
-            if let Ok(pos) = app.cursor_position() {
-                let scale = window.scale_factor().unwrap_or(1.0);
-                let offset = (CURSOR_OFFSET * scale) as i32;
-                let _ = window.set_position(PhysicalPosition::new(
-                    pos.x as i32 + offset,
-                    pos.y as i32 + offset,
-                ));
-            }
-        }
-        thread::sleep(Duration::from_millis(16));
-    });
-}
-
-fn apply_state(app: &tauri::AppHandle, hub: &StateHub, state: State) {
-    hub.set(app, state);
-    if let Some(window) = app.get_webview_window(OVERLAY_LABEL) {
-        let _ = if state == State::Idle { window.hide() } else { window.show() };
-    }
-}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -83,8 +37,8 @@ pub fn run() {
             let hub = StateHub::new();
             app.manage(hub.clone());
 
-            build_overlay(app.handle())?;
-            spawn_cursor_follower(app.handle().clone(), hub.clone());
+            overlay::build(app.handle())?;
+            overlay::spawn_cursor_follower(app.handle().clone(), hub.clone());
 
             // Dev aid: `CHIRP_DEBUG_STATE=listening` applies a state shortly
             // after launch so the overlay can be checked without the tray.
@@ -101,20 +55,36 @@ pub fn run() {
                 });
             }
 
-            // Dev-only state picker so every overlay state can be seen
-            // before the voice loop exists.
+            // Menu-bar menu: the talk key, the setup actions, and a dev-only
+            // state picker so every overlay state can be previewed.
+            let key_item = MenuItem::with_id(app, "key_label", "Talk key: not set", false, None::<&str>)?;
+            let change_key = MenuItem::with_id(app, "change_key", "Change talk key…", true, None::<&str>)?;
+            let check_permissions =
+                MenuItem::with_id(app, "check_permissions", "Check permissions…", true, None::<&str>)?;
             let state_items = DEV_STATES
                 .iter()
                 .map(|(label, _)| MenuItem::with_id(app, format!("state:{label}"), *label, true, None::<&str>))
                 .collect::<tauri::Result<Vec<_>>>()?;
-            let state_refs: Vec<&dyn tauri::menu::IsMenuItem<_>> =
-                state_items.iter().map(|i| i as &dyn tauri::menu::IsMenuItem<_>).collect();
+            let state_refs: Vec<&dyn IsMenuItem<_>> =
+                state_items.iter().map(|i| i as &dyn IsMenuItem<_>).collect();
             let states_menu = Submenu::with_items(app, "Show state", true, &state_refs)?;
             let quit = MenuItem::with_id(app, "quit", "Quit Chirp", true, None::<&str>)?;
             let menu = Menu::with_items(
                 app,
-                &[&states_menu, &PredefinedMenuItem::separator(app)?, &quit],
+                &[
+                    &key_item,
+                    &change_key,
+                    &check_permissions,
+                    &PredefinedMenuItem::separator(app)?,
+                    &states_menu,
+                    &PredefinedMenuItem::separator(app)?,
+                    &quit,
+                ],
             )?;
+
+            let config_dir = app.path().app_config_dir()?;
+            let setup = Setup::new(app.handle().clone(), hub.clone(), config_dir, key_item);
+            setup.start();
 
             TrayIconBuilder::new()
                 // Monochrome silhouette; macOS tints it for light and dark menu bars.
@@ -124,12 +94,17 @@ pub fn run() {
                 .menu(&menu)
                 .on_menu_event(move |app, event| {
                     let id = event.id().as_ref();
-                    if id == "quit" {
-                        app.exit(0);
-                    } else if let Some(label) = id.strip_prefix("state:") {
-                        if let Some((_, state)) = DEV_STATES.iter().find(|(l, _)| *l == label) {
-                            let hub = app.state::<StateHub>();
-                            apply_state(app, &hub, *state);
+                    match id {
+                        "quit" => app.exit(0),
+                        "change_key" => setup.change_key(),
+                        "check_permissions" => setup.check_permissions(),
+                        _ => {
+                            if let Some(label) = id.strip_prefix("state:") {
+                                if let Some((_, state)) = DEV_STATES.iter().find(|(l, _)| *l == label) {
+                                    let hub = app.state::<StateHub>();
+                                    apply_state(app, &hub, *state);
+                                }
+                            }
                         }
                     }
                 })
